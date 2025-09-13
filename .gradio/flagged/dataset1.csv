@@ -1,0 +1,6 @@
+Drug Review,Probabilities,Final Prediction,timestamp
+Eu acho que não vou  gostar do paracetamol,"{""label"": ""NEGATIVE"", ""confidences"": [{""label"": ""NEGATIVE"", ""confidence"": 0.8695}]}",Prediction: NEGATIVE (confidence 0.87),2025-09-13 19:39:00.022647
+,"{""label"": null, ""confidences"": null}",,2025-09-13 19:41:39.814509
+,"{""label"": null, ""confidences"": null}",,2025-09-13 19:43:45.728703
+"olá, eu gosto","{""label"": ""NEGATIVE"", ""confidences"": [{""label"": ""NEGATIVE"", ""confidence"": 0.7005}, {""label"": ""Positive"", ""confidence"": 0.0}]}",Prediction: NEGATIVE (confidence 0.70),2025-09-13 19:43:58.722338
+"olá, eu gosto","{""label"": ""NEGATIVE"", ""confidences"": [{""label"": ""NEGATIVE"", ""confidence"": 0.7005}, {""label"": ""Positive"", ""confidence"": 0.0}]}",Prediction: NEGATIVE (confidence 0.70),2025-09-13 19:44:07.424287

@@ -1,11 +1,23 @@
 # Drug Review Sentiment Analysis
 
-This repository contains a **mock case study in healthcare**, focusing on **sentiment analysis of patient drug reviews**.  
-The goal is to predict whether a patient's opinion about a medication is **positive** or **negative**, using fine-tuned LLMs.
+> [!CAUTION] This repository has been created for educational purposes. Obviously, better solutions exist to perform drug review sentiment analysis, but the approaches here used were the ones that made more sense for the purpose.
 
-Dataset used: [Drug Review Dataset](https://www.kaggle.com/datasets/andrewmvd/drug-review-dataset) from Kaggle.
+This project is a **mock case study in healthcare**, exploring the use of **Natural Language Processing (NLP)** to analyze patient reviews of medications.
+The goal is to classify a review as **positive** or **negative**, using a **fine-tuned transformer model**.
 
-Model used: [DistilBERT](https://huggingface.co/distilbert-base-uncased) from Hugging Face.
+---
+
+## Dataset
+- **Source**: [Drug Review Dataset (Kaggle)](https://www.kaggle.com/datasets/andrewmvd/drug-review-dataset)
+- Contains patient-written reviews of various drugs, along with ratings and conditions.
+- For this project, ratings were binarized into **positive vs. negative sentiment**.
+
+---
+
+## Model
+- **Base model**: [DistilBERT (Hugging Face)](https://huggingface.co/distilbert-base-uncased)
+- Fine-tuned for binary sentiment classification.
+- Chosen for being lightweight and efficient while still maintaining strong performance.
 
 ---
 
@@ -24,7 +36,7 @@ drug-review-sentiment/
 ├── requirements.txt # Dependencies
 └── README.md # Project documentation
 ```
-
+---
 ## How to Run
 
 1. Clone repository:
@@ -41,17 +53,18 @@ pip install -r requirements.txt
 python src/train.py
 ```
 
-
+---
 ## Results
 
-### Exploratory Data Analysis of drug_review data
+**Exploratory Data Analysis (EDA):** (see notebooks/eda.ipynb)
 
-TODO
+**Sentiment distribution: **(to be added)
 
-### Sentiment Distribution
+**Performance metrics: **stored in results/metrics.json
 
-TODO
+**Confusion matrix:** available at results/confusion_matrix.png
 
-## Future Work
+---
+### ⚠️ **Disclaimer**
 
-TODO
+This repository is for educational demonstration only and should not be used for any clinical or decision-making purposes.
