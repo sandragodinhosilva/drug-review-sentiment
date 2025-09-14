@@ -24,10 +24,11 @@ def main(
         sep (str): Separator used in the CSV/TSV files.
 
     Returns:
-        dataset (DatasetDict): A DatasetDict containing 'train' and 'test' datasets
+        dataset (DatasetDict): A DatasetDict containing 'train', 'validation', and 'test' datasets
     """
-    train = pd.read_csv(os.path.join("..", train_dir, train_file ), sep=sep)
-    test = pd.read_csv(os.path.join("..", test_dir, test_file), sep=sep)
+    # Read data from the provided directories relative to the working dir
+    train = pd.read_csv(os.path.join(train_dir, train_file), sep=sep)
+    test = pd.read_csv(os.path.join(test_dir, test_file), sep=sep)
 
 
     def create_label(rating):
@@ -47,9 +48,19 @@ def main(
     train_ds = Dataset.from_pandas(train)
     test_ds  = Dataset.from_pandas(test)
 
-    # Create DatasetDict
+    # Rename label column to the conventional 'label'
+    if "sentiment" in train_ds.column_names:
+        train_ds = train_ds.rename_column("sentiment", "label")
+    if "sentiment" in test_ds.column_names:
+        test_ds = test_ds.rename_column("sentiment", "label")
+
+    # Create validation split from train
+    split = train_ds.train_test_split(test_size=0.1, seed=42)
+
+    # Assemble DatasetDict with validation
     dataset = DatasetDict({
-        "train": train_ds,
+        "train": split["train"],
+        "validation": split["test"],
         "test": test_ds
     })
 
