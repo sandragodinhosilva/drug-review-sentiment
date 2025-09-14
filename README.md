@@ -65,6 +65,23 @@ python src/train.py
 **Confusion matrix:** available at results/confusion_matrix.png
 
 ---
+## TensorBoard
+
+Training can optionally log to TensorBoard under `results/tensorboard/<run_name>`.
+
+- CLI
+  - Enable: `python src/train_model.py --model distilbert-base-uncased --epochs 1 --batch-size 16 --tensorboard`
+  - Launch UI: `tensorboard --logdir results/tensorboard`
+
+- Notebook
+  - Use `notebooks/run_pipeline.ipynb`, which passes `use_tensorboard=True` and includes a cell to launch TensorBoard.
+  - Or call `train_model(..., use_tensorboard=True)` and then run `%tensorboard --logdir results/tensorboard`.
+
+Notes
+- All outputs are centralized under `results/` (artifacts: `results/outputs/`, MLflow: `results/mlruns`, logs: `results/*.log`).
+- Override base directory by setting env var `RESULTS_DIR=/custom/path`.
+
+---
 ### ⚠️ **Disclaimer**
 
 This repository is for educational demonstration only and should not be used for any clinical or decision-making purposes.

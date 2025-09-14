@@ -1,5 +1,5 @@
 import os, sys, argparse, mlflow, numpy as np
-from typing import Any
+from typing import Any, Optional, List, Dict
 from transformers import (
     AutoTokenizer, AutoModelForSequenceClassification,
     TrainingArguments, Trainer, EarlyStoppingCallback, set_seed
@@ -8,9 +8,13 @@ from peft import LoraConfig, get_peft_model, TaskType
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import torch
 from src.load_datasets import main as load_local_csv
-from src.logging_config import setup_logger, info, error
+import src.logging_config as logcfg
+from src import config
 
-setup_logger("train_model.log")
+# Ensure standard directories and configure logging
+config.ensure_dirs()
+logcfg.setup_logger(config.TRAIN_LOG)
+logcfg.info(f"Logging to {config.TRAIN_LOG}")
 
 # --- Global ---
 SEED = 42
@@ -41,11 +45,11 @@ def _compute_class_weights(labels: np.ndarray, num_labels: int = NUM_LABELS) -> 
 
 
 class WeightedLossTrainer(Trainer):
-    def __init__(self, *args, class_weights: torch.Tensor | None = None, **kwargs):
+    def __init__(self, *args, class_weights: Optional[torch.Tensor] = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.class_weights = class_weights
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         # Avoid boolean ops on tensors; explicitly pick key
         labels = inputs.get("labels", inputs.get("label"))
         outputs = model(**inputs)
@@ -63,7 +67,7 @@ class WeightedLossTrainer(Trainer):
 
 
 # --- LoRA target selection ---
-def guess_lora_targets(model) -> list[str]:
+def guess_lora_targets(model) -> List[str]:
     """Guess sensible LoRA target modules automatically."""
     candidate_keywords = [
         "q_proj", "k_proj", "v_proj", "out_proj",  # RoBERTa/DeBERTa style
@@ -88,10 +92,12 @@ def train_model(
     batch_size: int = 16,
     num_train_epochs: int = 3,
     imbalance_strategy: str = "weighted_loss",  # 'none' | 'weighted_loss'
-    fp16: bool | None = None,
+    fp16: Optional[bool] = None,
+    subset_frac: Optional[float] = None,
+    use_tensorboard: bool = False,
 ):
-    ds = load_local_csv()
-    info("Datasets loaded successfully.")
+    ds = load_local_csv(sample_frac=subset_frac)
+    logcfg.info("Datasets loaded successfully.")
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -108,7 +114,7 @@ def train_model(
     tokenized = tokenized.remove_columns([c for c in tokenized["train"].column_names if c not in keep_cols])
     tokenized = tokenized.rename_column("label", "labels")  # standardize
     tokenized = tokenized.with_format("torch")
-    info("Datasets tokenized.")
+    logcfg.info("Datasets tokenized.")
 
     # --- Base model ---
     base = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=NUM_LABELS)
@@ -118,7 +124,7 @@ def train_model(
 
     # --- LoRA config ---
     targets = guess_lora_targets(base)
-    info(f"Selected LoRA target modules: {targets}")
+    logcfg.info(f"Selected LoRA target modules: {targets}")
 
     lora_cfg = LoraConfig(
         r=8,
@@ -131,7 +137,7 @@ def train_model(
     model.print_trainable_parameters()
 
     run_name = f"{model_name.split('/')[-1]}-lora-{MAX_LEN}-{imbalance_strategy}"
-    out_dir = f"outputs/{run_name}"
+    out_dir = os.path.join(config.OUTPUTS_DIR, run_name)
 
     # Resolve mixed precision: CLI/env override, else auto on CUDA
     def _resolve_fp16(user_fp16: bool | None) -> bool:
@@ -144,6 +150,9 @@ def train_model(
 
     use_fp16 = _resolve_fp16(fp16)
 
+    # TensorBoard logging directory (optional)
+    tb_dir = os.path.join(config.TB_DIR, run_name) if use_tensorboard else None
+
     args = TrainingArguments(
         output_dir=out_dir,
         learning_rate=2e-4,
@@ -151,7 +160,7 @@ def train_model(
         per_device_eval_batch_size=32,
         num_train_epochs=num_train_epochs,
         gradient_accumulation_steps=2,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=200,
         save_strategy="steps",
         save_steps=200,
@@ -161,17 +170,22 @@ def train_model(
         logging_steps=100,
         weight_decay=0.01,
         fp16=use_fp16,
-        report_to=["none"],
+        report_to=["tensorboard"] if use_tensorboard else ["none"],
+        logging_dir=tb_dir,
+        run_name=run_name,
         seed=SEED,
     )
 
     # --- MLflow ---
+    # Store MLflow tracking data under results/mlruns
+    mlflow.set_tracking_uri(config.mlflow_uri())
     mlflow.set_experiment("drug-review-sentiment")
 
     with mlflow.start_run(run_name=run_name):
         mlflow.log_params({
             "model": model_name,
             "imbalance_strategy": imbalance_strategy,
+            "subset_frac": subset_frac if subset_frac is not None else 1.0,
             "lora_r": lora_cfg.r,
             "lora_alpha": lora_cfg.lora_alpha,
             "lora_dropout": lora_cfg.lora_dropout,
@@ -187,26 +201,27 @@ def train_model(
 
         # Prepare imbalance handling
         trainer_cls = Trainer
-        trainer_kwargs: dict[str, Any] = dict(
+        trainer_kwargs: Dict[str, Any] = dict(
             model=model,
             args=args,
             train_dataset=tokenized["train"],
             eval_dataset=tokenized["validation"],
             tokenizer=tokenizer,
             compute_metrics=compute_metrics,
-            callbacks=callbacks,
+            callbacks=callbacks
         )
 
         if imbalance_strategy == "weighted_loss":
             # Accessing column directly returns a Python list under HF Datasets
             y_train = np.asarray(tokenized["train"]["labels"])  # no .cpu() here
             class_weights = _compute_class_weights(y_train, num_labels=NUM_LABELS)
-            info(f"Using weighted loss with class_weights: {class_weights.tolist()}")
+            logcfg.info(f"Using weighted loss with class_weights: {class_weights.tolist()}")
             trainer_cls = WeightedLossTrainer
             trainer_kwargs["class_weights"] = class_weights
         else:
-            info("No imbalance strategy applied.")
+            logcfg.info("No imbalance strategy applied.")
 
+        logcfg.info("Starting training.")
         trainer = trainer_cls(**trainer_kwargs)
 
         trainer.train()
@@ -219,6 +234,23 @@ def train_model(
                 # Skip non-numeric values
                 continue
 
+        # Log a concise human-readable test summary
+        def _fmt(x):
+            try:
+                return f"{float(x):.4f}"
+            except Exception:
+                return "n/a"
+
+        acc = metrics.get("eval_accuracy") or metrics.get("accuracy")
+        prec = metrics.get("eval_precision") or metrics.get("precision")
+        rec = metrics.get("eval_recall") or metrics.get("recall")
+        f1v = metrics.get("eval_f1") or metrics.get("f1")
+        loss = metrics.get("eval_loss") or metrics.get("loss")
+        logcfg.info(
+            "Test metrics — accuracy=%s, precision=%s, recall=%s, f1=%s, loss=%s",
+            _fmt(acc), _fmt(prec), _fmt(rec), _fmt(f1v), _fmt(loss)
+        )
+
         adapters_dir = f"{out_dir}-adapters"
         os.makedirs(adapters_dir, exist_ok=True)
         model.save_pretrained(adapters_dir)
@@ -229,16 +261,17 @@ def train_model(
             from sklearn.metrics import ConfusionMatrixDisplay
             y_logits = trainer.predict(tokenized["test"]).predictions
             y_pred = y_logits.argmax(axis=-1)
-            y_true = tokenized["test"]["labels"].cpu().numpy()
+            y_true = np.asarray(tokenized["test"]["labels"])  # labels column is a list
             disp = ConfusionMatrixDisplay.from_predictions(y_true, y_pred)
             plt.title(f"Confusion Matrix ({model_name})")
             fig_path = os.path.join(out_dir, "cm.png")
             plt.savefig(fig_path, bbox_inches="tight")
             mlflow.log_artifact(fig_path)
+            logcfg.info("Saved confusion matrix: %s", fig_path)
         except Exception as e:
-            info(f"CM plot failed: {e}")
+            logcfg.info(f"CM plot failed: {e}")
 
-        info(f"Done. Adapters at: {adapters_dir}")
+        logcfg.info(f"Done. Adapters at: {adapters_dir}")
 
 
 if __name__ == "__main__":
@@ -247,6 +280,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--imbalance", choices=["none", "weighted_loss"], default="weighted_loss")
+    parser.add_argument("--subset-frac", dest="subset_frac", type=float, default=None,
+                        help="Optional fraction (0-1) to subsample train/test for a quick trial")
+    parser.add_argument("--tensorboard", action="store_true", help="Enable TensorBoard logging under results/tensorboard")
     # fp16 flags: --fp16 to enable, --no-fp16 to disable, default comes from env or CUDA availability
     fp16_group = parser.add_mutually_exclusive_group()
     fp16_group.add_argument("--fp16", dest="fp16", action="store_true")
@@ -268,7 +304,9 @@ if __name__ == "__main__":
                 num_train_epochs=args_cli.epochs,
                 imbalance_strategy=args_cli.imbalance,
                 fp16=args_cli.fp16,
+                subset_frac=args_cli.subset_frac,
+                use_tensorboard=args_cli.tensorboard,
             )
     except Exception as e:
-        error(f"Training failed: {e}")
+        logcfg.error(f"Training failed: {e}")
         sys.exit(1)

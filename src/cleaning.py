@@ -21,11 +21,11 @@ from typing import Iterable, List
 import logging
 try:
     import src.logging_config as _logcfg  # type: ignore
-    _LOGGER = logging.getLogger("my_app")
+    _LOGGER = logging.getLogger("cleaning")
     _INFO = getattr(_logcfg, "info", _LOGGER.info)
     _DEBUG = getattr(_logcfg, "debug", _LOGGER.debug)
 except Exception:  # Fallback if logging not configured yet
-    _LOGGER = logging.getLogger("my_app")
+    _LOGGER = logging.getLogger("cleaning")
     _INFO = _LOGGER.info
     _DEBUG = _LOGGER.debug
 

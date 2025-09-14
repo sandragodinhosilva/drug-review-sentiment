@@ -1,27 +1,44 @@
 """
 Drug Review Sentiment Classifier App
 """
+import os
+import glob
 import gradio as gr
 import pandas as pd
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from peft import PeftModel
 import torch
 
-from logging_config import setup_logger
-setup_logger("app.log")
-from logging_config import info, error
+from src import logging_config as logcfg
+from src import config
+
+# Centralize logs under results/
+config.ensure_dirs()
+logcfg.setup_logger(config.APP_LOG)
+info = logcfg.info
+error = logcfg.error
 
 # --------------------------
 # Load tokenizer & LoRA model
 # --------------------------
-BASE_MODEL = "dmis-lab/biobert-base-cased-v1.1"
-ADAPTER = "results/biobert-lora-adapters"   # <- change if loading from Drive or HF Hub
+BASE_MODEL = os.getenv("BASE_MODEL", "dmis-lab/biobert-base-cased-v1.1")
+
+def _discover_latest_adapters() -> str | None:
+    base = config.OUTPUTS_DIR
+    pattern = os.path.join(base, "*-adapters")
+    candidates = [d for d in glob.glob(pattern) if os.path.isdir(d)]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda d: os.path.getmtime(d))
+    return candidates[-1]
+
+ADAPTER = os.getenv("ADAPTER_DIR") or _discover_latest_adapters() or os.path.join(RESULTS_DIR, "biobert-lora-adapters")
 
 tokenizer = AutoTokenizer.from_pretrained(ADAPTER)
 model = AutoModelForSequenceClassification.from_pretrained(BASE_MODEL, num_labels=2)
 model = PeftModel.from_pretrained(model, ADAPTER)
 model.eval()
-info(f"Loaded model {ADAPTER} with base {BASE_MODEL}")
+info(f"Loaded model adapters from {ADAPTER} with base {BASE_MODEL}")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model.to(device)
 

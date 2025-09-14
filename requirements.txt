@@ -20,3 +20,4 @@ tqdm>=4.65.0
 kagglehub
 
 mlflow
+tensorboard>=2.12
