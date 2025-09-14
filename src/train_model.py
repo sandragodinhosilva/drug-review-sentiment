@@ -87,6 +87,16 @@ def guess_lora_targets(model) -> List[str]:
 
 
 # --- Main training ---
+def _normalize_model_id(name: str) -> str:
+    """Map common aliases/shorthands to canonical HF repo IDs."""
+    aliases = {
+        # Common shorthand for the public BioBERT checkpoint
+        "biobert-base-cased-v1.1": "dmis-lab/biobert-base-cased-v1.1",
+        "biobert-base-cased": "dmis-lab/biobert-base-cased-v1.1",
+    }
+    return aliases.get(name, name)
+
+
 def train_model(
     model_name: str,
     batch_size: int = 16,
@@ -99,7 +109,8 @@ def train_model(
     ds = load_local_csv(sample_frac=subset_frac)
     logcfg.info("Datasets loaded successfully.")
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model_id = _normalize_model_id(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
 
     def tokenize(batch):
         return tokenizer(
@@ -117,7 +128,7 @@ def train_model(
     logcfg.info("Datasets tokenized.")
 
     # --- Base model ---
-    base = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=NUM_LABELS)
+    base = AutoModelForSequenceClassification.from_pretrained(model_id, num_labels=NUM_LABELS)
 
     if hasattr(base, "bert"):
         base.bert.embeddings.requires_grad_(False)
@@ -225,6 +236,8 @@ def train_model(
         trainer = trainer_cls(**trainer_kwargs)
 
         trainer.train()
+
+        logcfg.info("Starting evaluation.")
         metrics = trainer.evaluate(tokenized["test"])
         for k, v in metrics.items():
             # Ensure MLflow receives plain Python floats
