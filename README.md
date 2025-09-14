@@ -1,87 +1,114 @@
 # Drug Review Sentiment Analysis
 
-> [!CAUTION] This repository has been created for educational purposes. Obviously, better solutions exist to perform drug review sentiment analysis, but the approaches here used were the ones that made more sense for the purpose.
+This project is a mock healthcare case study using NLP to classify patient drug reviews as positive or negative by fine-tuning transformer models. It includes a training pipeline, reproducible outputs, and a small Gradio demo for quick experimentation.
 
-This project is a **mock case study in healthcare**, exploring the use of **Natural Language Processing (NLP)** to analyze patient reviews of medications.
-The goal is to classify a review as **positive** or **negative**, using a **fine-tuned transformer model**.
+> [!CAUTION] This repository has been created for educational purposes. Obviously, better solutions exist to perform drug review sentiment analysis, but the approaches here used were the ones that made more sense for the purpose.
 
 ---
 
 ## Dataset
-- **Source**: [Drug Review Dataset (Kaggle)](https://www.kaggle.com/datasets/andrewmvd/drug-review-dataset)
-- Contains patient-written reviews of various drugs, along with ratings and conditions.
-- For this project, ratings were binarized into **positive vs. negative sentiment**.
+- Source: Drug Review Dataset (Kaggle): https://www.kaggle.com/datasets/andrewmvd/drug-review-dataset
+- Reviews include text, condition, and ratings (1–10). Ratings are binarized to sentiment: 0 = negative (≤5), 1 = positive (>5).
+- This repo includes example TSVs under `data/`: `drugsComTrain_raw.tsv` and `drugsComTest_raw.tsv`.
 
 ---
 
-## Model
-- **Base model**: [DistilBERT (Hugging Face)](https://huggingface.co/distilbert-base-uncased)
-- Fine-tuned for binary sentiment classification.
-- Chosen for being lightweight and efficient while still maintaining strong performance.
+## Models
+- Works with any Hugging Face sequence classification backbone; tested with:
+  - `dmis-lab/biobert-base-cased-v1.1`
+  - `distilbert-base-uncased`
+- Fine-tuning uses LoRA adapters to keep training light and fast.
+
+---
+
+## Quickstart
+1) Install dependencies
+   - `pip install -r requirements.txt`
+
+2) Train a model
+   - Minimal run: `python src/train_model.py --model distilbert-base-uncased --epochs 1 --batch-size 16`
+   - Faster trial on a subset: add `--subset-frac 0.1`
+   - Enable TensorBoard logging: add `--tensorboard`
+
+3) Inspect outputs
+   - TensorBoard: `tensorboard --logdir results/tensorboard`
+   - MLflow UI (local files): artifacts tracked under `results/mlruns`
+   - Trained LoRA adapters: saved under `results/outputs/<run_name>-adapters`
+   - Confusion matrix: `results/outputs/<run_name>/cm.png`
+
+4) Run the demo app (after training)
+   - `python src/app.py`
+   - Optional env vars:
+     - `BASE_MODEL` — HF base model to load (default: `dmis-lab/biobert-base-cased-v1.1`)
+     - `ADAPTER_DIR` — path to a specific adapters folder; if not set, the app picks the most recent `*-adapters` under `results/outputs/`
+
+---
+
+## CLI Options (`src/train_model.py`)
+- `--model` (repeatable): HF model ID(s), e.g. `--model distilbert-base-uncased --model dmis-lab/biobert-base-cased-v1.1`
+- `--epochs`: training epochs (default 3)
+- `--batch-size`: per-device train batch size (default 16)
+- `--imbalance`: `none` or `weighted_loss` (default `weighted_loss`)
+- `--subset-frac`: float in (0,1) to subsample data for quick trials
+- `--tensorboard`: enable TensorBoard logging under `results/tensorboard`
+- `--fp16` / `--no-fp16`: force mixed precision on/off (defaults to CUDA availability or `TRAIN_FP16` env var)
 
 ---
 
 ## Repository Structure
 ```
 drug-review-sentiment/
-├── notebooks/ # Exploratory Data Analysis (EDA)
-│ └── eda.ipynb
-├── src/ # Core pipeline scripts
-│ ├── data_processing.py # Data loading & tokenization
-│ ├── train.py # Fine-tuning DistilBERT
-│ ├── evaluate.py # Model evaluation & metrics
-├── results/ # Outputs (metrics, confusion matrix)
-│ ├── metrics.json
-│ └── confusion_matrix.png
-├── requirements.txt # Dependencies
-└── README.md # Project documentation
-```
----
-## How to Run
-
-1. Clone repository:
-```bash
-git clone https://github.com/<your-username>/drug-review-sentiment.git
-cd drug-review-sentiment
-```
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-3. Run training:
-```bash
-python src/train.py
+├── data/
+│   ├── drugsComTrain_raw.tsv
+│   └── drugsComTest_raw.tsv
+├── notebooks/
+│   ├── eda.ipynb
+│   ├── modelling.ipynb
+│   ├── run_pipeline.ipynb
+│   └── experiments.ipynb
+├── src/
+│   ├── app.py                # Gradio demo for inference
+│   ├── cleaning.py           # Reusable text-cleaning utilities
+│   ├── config.py             # Centralized results/paths config
+│   ├── load_datasets.py      # Load TSVs → HF DatasetDict
+│   ├── logging_config.py     # Console+file logging helpers
+│   └── train_model.py        # LoRA fine-tuning + metrics
+├── requirements.txt
+└── README.md
 ```
 
----
-## Results
+Outputs (created on first run):
+- `results/outputs/` — training outputs and artifacts (incl. confusion matrix)
+- `results/mlruns/` — MLflow tracking data (local file store)
+- `results/tensorboard/` — TensorBoard event files when enabled
+- `results/*.log` — training/app logs
 
-**Exploratory Data Analysis (EDA):** (see notebooks/eda.ipynb)
-
-**Sentiment distribution: **(to be added)
-
-**Performance metrics: **stored in results/metrics.json
-
-**Confusion matrix:** available at results/confusion_matrix.png
+You can change the base results directory by setting `RESULTS_DIR=/custom/path`.
 
 ---
-## TensorBoard
 
-Training can optionally log to TensorBoard under `results/tensorboard/<run_name>`.
-
-- CLI
-  - Enable: `python src/train_model.py --model distilbert-base-uncased --epochs 1 --batch-size 16 --tensorboard`
-  - Launch UI: `tensorboard --logdir results/tensorboard`
-
-- Notebook
-  - Use `notebooks/run_pipeline.ipynb`, which passes `use_tensorboard=True` and includes a cell to launch TensorBoard.
-  - Or call `train_model(..., use_tensorboard=True)` and then run `%tensorboard --logdir results/tensorboard`.
-
-Notes
-- All outputs are centralized under `results/` (artifacts: `results/outputs/`, MLflow: `results/mlruns`, logs: `results/*.log`).
-- Override base directory by setting env var `RESULTS_DIR=/custom/path`.
+## Notebooks
+- `notebooks/eda.ipynb`: exploratory data analysis
+- `notebooks/modelling.ipynb`, `notebooks/run_pipeline.ipynb`: example training runs with options (incl. TensorBoard)
 
 ---
-### ⚠️ **Disclaimer**
 
-This repository is for educational demonstration only and should not be used for any clinical or decision-making purposes.
+## Notes & Tips
+- Class imbalance: training uses weighted cross-entropy when `--imbalance weighted_loss`.
+- Multi-run: pass multiple `--model` flags to train several backbones sequentially.
+- Mixed precision: `--fp16` usually speeds up training on GPUs with minimal loss.
+- Flagging in app: from the Single Review tab, click "Flag this prediction" to report issues; saved to `results/flags/flags.csv`.
+
+---
+
+## Disclaimer
+This repository is for educational demonstration only and must not be used for clinical or real-world decision-making.
+
+---
+
+## Troubleshooting
+- No adapters found when launching app: run training first, or set `ADAPTER_DIR` to a valid `*-adapters` folder under `results/outputs/`.
+- Data files missing: ensure `data/drugsComTrain_raw.tsv` and `data/drugsComTest_raw.tsv` exist (see Kaggle link above).
+- CUDA out of memory: reduce `--batch-size`, add `--subset-frac 0.1`, or use `--no-fp16` if mixed precision causes instability.
+- Slow/large downloads: models/tokenizers are pulled from Hugging Face on first run; pre-download or pick a smaller model like `distilbert-base-uncased`.
+- MLflow/TensorBoard paths: override the base outputs by setting `RESULTS_DIR=/custom/path`.
