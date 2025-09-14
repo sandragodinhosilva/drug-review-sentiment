@@ -1,7 +1,9 @@
 """
-Contains functionality for uploading data
+Utility to load local drug review datasets and return a DatasetDict
+with train/validation/test splits and binary labels.
 """
 import os
+import re
 import pandas as pd
 from datasets import Dataset, DatasetDict
 
@@ -37,10 +39,21 @@ def main(
         """
         return 1 if rating > 5 else 0
 
+    def clean_text(text: object) -> str:
+        """Basic review cleaner: remove HTML tags and normalize spaces."""
+        if isinstance(text, str) is False:
+            # Convert NaN/other types to string safely
+            text = "" if pd.isna(text) else str(text)
+        text = re.sub(r"<.*?>", "", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
     train["sentiment"] = train["rating"].apply(create_label)
     test["sentiment"]  = test["rating"].apply(create_label)
 
-    # Keep only required columns
+    # Clean review text and keep only required columns
+    train["review"] = train["review"].apply(clean_text)
+    test["review"] = test["review"].apply(clean_text)
     train = train[["review", "sentiment"]]
     test  = test[["review", "sentiment"]]
 
